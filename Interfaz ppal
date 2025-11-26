@@ -1,0 +1,1372 @@
+Interfaz ppal
+
+<Window x:Class="MFaceVotingApp.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Sistema de Verificación Biométrica - Votación" 
+        Height="600" Width="1000"
+        WindowStartupLocation="CenterScreen"
+        Loaded="Window_Loaded"
+        Closing="Window_Closing">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#2196F3" Padding="15">
+            <StackPanel>
+                <TextBlock Text="Sistema de Verificación Biométrica Electoral" 
+                          FontSize="24" FontWeight="Bold" 
+                          Foreground="White" HorizontalAlignment="Center"/>
+                <TextBlock x:Name="txtStatus" Text="Estado: Inicializando..." 
+                          FontSize="14" Foreground="White" 
+                          HorizontalAlignment="Center" Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="1" Margin="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Panel - Capture -->
+            <Border Grid.Column="0" BorderBrush="#CCCCCC" 
+                    BorderThickness="2" CornerRadius="5" Padding="10">
+                <StackPanel>
+                    <TextBlock Text="Captura en Vivo" FontSize="18" 
+                              FontWeight="Bold" HorizontalAlignment="Center" 
+                              Margin="0,0,0,10"/>
+                    
+                    <Border BorderBrush="#999999" BorderThickness="1" 
+                            Height="350" Background="Black">
+                        <Image x:Name="imgLiveCapture" Stretch="Uniform"/>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" 
+                               HorizontalAlignment="Center" Margin="0,10,0,0">
+                        <Button x:Name="btnStartCapture" Content="Iniciar Captura" 
+                               Width="120" Height="35" Margin="5"
+                               Click="btnStartCapture_Click"/>
+                        <Button x:Name="btnStopCapture" Content="Detener" 
+                               Width="120" Height="35" Margin="5"
+                               IsEnabled="False" Click="btnStopCapture_Click"/>
+                    </StackPanel>
+
+                    <TextBlock x:Name="txtCaptureInfo" Text="" 
+                              FontSize="12" TextWrapping="Wrap" 
+                              Margin="0,10,0,0" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Middle Panel - Info -->
+            <StackPanel Grid.Column="1" Width="200" Margin="10,0">
+                <Border BorderBrush="#4CAF50" BorderThickness="2" 
+                       CornerRadius="5" Padding="15" Margin="0,50,0,10">
+                    <StackPanel>
+                        <TextBlock Text="RESULTADO" FontSize="16" 
+                                  FontWeight="Bold" HorizontalAlignment="Center"
+                                  Margin="0,0,0,10"/>
+                        
+                        <TextBlock Text="Matching Score:" FontSize="12" 
+                                  FontWeight="Bold"/>
+                        <TextBlock x:Name="txtMatchingScore" Text="0%" 
+                                  FontSize="28" FontWeight="Bold" 
+                                  HorizontalAlignment="Center" Margin="0,5"/>
+                        
+                        <TextBlock x:Name="txtMatchResult" Text="Sin verificar" 
+                                  FontSize="14" HorizontalAlignment="Center"
+                                  Margin="0,10,0,0" FontWeight="Bold"/>
+                        
+                        <Separator Margin="0,10"/>
+                        
+                        <TextBlock Text="Calidad:" FontSize="12"/>
+                        <TextBlock x:Name="txtQuality" Text="N/A" FontSize="14"
+                                  HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <Button x:Name="btnShowResults" Content="Ver Datos del Votante" 
+                       Height="40" Click="btnShowResults_Click"
+                       IsEnabled="False" Background="#4CAF50" 
+                       Foreground="White" FontWeight="Bold"/>
+            </StackPanel>
+
+            <!-- Right Panel - Reference -->
+            <Border Grid.Column="2" BorderBrush="#CCCCCC" 
+                    BorderThickness="2" CornerRadius="5" Padding="10">
+                <StackPanel>
+                    <TextBlock Text="Imagen de Referencia" FontSize="18" 
+                              FontWeight="Bold" HorizontalAlignment="Center" 
+                              Margin="0,0,0,10"/>
+                    
+                    <Border BorderBrush="#999999" BorderThickness="1" 
+                            Height="350" Background="#F5F5F5">
+                        <Image x:Name="imgReference" Stretch="Uniform"
+                              Source="/Resources/reference_photo.jpg"/>
+                    </Border>
+
+                    <TextBlock Text="Foto registrada en el sistema" 
+                              FontSize="12" FontStyle="Italic"
+                              HorizontalAlignment="Center" Margin="0,10,0,0"
+                              Foreground="#666666"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Footer -->
+        <Border Grid.Row="2" Background="#F5F5F5" Padding="10" 
+                BorderBrush="#CCCCCC" BorderThickness="0,1,0,0">
+            <Grid>
+                <TextBlock x:Name="txtConnectionStatus" 
+                          Text="Conexión MFace: Desconectado" 
+                          VerticalAlignment="Center"/>
+                <TextBlock x:Name="txtLastUpdate" 
+                          Text="" 
+                          HorizontalAlignment="Right" 
+                          VerticalAlignment="Center"
+                          FontSize="11" Foreground="#666666"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
+
+
+---codigo ppal
+using System;
+using System.IO;
+using System.Windows;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using MFace.Tool.Common.Interfaces;
+using MFace.Tool.MFaceProxy;
+using MFace.Tool.MFaceProxy.Enumerations;
+using MFace.Tool.MFaceProxy.Types;
+
+namespace MFaceVotingApp
+{
+    public partial class MainWindow : Window
+    {
+        private SensorWrapper sensorWrapper;
+        private DispatcherTimer liveTimer;
+        private string currentCaptureToken;
+        private byte[] capturedImage;
+        private byte[] croppedImage;
+        private float lastMatchingScore;
+        private bool isCapturing;
+        private SimpleLogger logger;
+
+        // Datos ficticios del votante
+        private VoterData voterData = new VoterData
+        {
+            Nombre = "Juan Carlos Pérez González",
+            Cedula = "1234567890",
+            Departamento = "Cundinamarca",
+            Municipio = "Bogotá D.C.",
+            Zona = "Zona 5 - Kennedy",
+            MesaVotacion = "Mesa 042"
+        };
+
+        public MainWindow()
+        {
+            InitializeComponent();
+            logger = new SimpleLogger();
+        }
+
+        private void Window_Loaded(object sender, RoutedEventArgs e)
+        {
+            InitializeMFace();
+        }
+
+        private void InitializeMFace()
+        {
+            try
+            {
+                txtStatus.Text = "Estado: Inicializando MFace...";
+                
+                // Inicializar SensorWrapper con MFace v2
+                sensorWrapper = new SensorWrapper(logger, 2, "sensorHttpEndpoint");
+                
+                if (sensorWrapper.Initialize())
+                {
+                    txtStatus.Text = "Estado: Sistema listo";
+                    txtConnectionStatus.Text = "Conexión MFace: Conectado";
+                    btnStartCapture.IsEnabled = true;
+                    
+                    // Configurar timer para actualización en vivo
+                    liveTimer = new DispatcherTimer();
+                    liveTimer.Interval = TimeSpan.FromMilliseconds(200);
+                    liveTimer.Tick += LiveTimer_Tick;
+                    
+                    logger.Log(LogLevel.INFO, "MFace inicializado correctamente");
+                }
+                else
+                {
+                    throw new Exception("No se pudo inicializar MFace");
+                }
+            }
+            catch (Exception ex)
+            {
+                txtStatus.Text = "Estado: Error de inicialización";
+                txtConnectionStatus.Text = "Conexión MFace: Error";
+                MessageBox.Show($"Error al inicializar MFace: {ex.Message}", 
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                logger.Log(LogLevel.ERROR, $"Error inicialización: {ex.Message}");
+            }
+        }
+
+        private void btnStartCapture_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                txtStatus.Text = "Estado: Iniciando captura...";
+                
+                // Iniciar captura con modo SingleClosestFace y timeout de 30 segundos
+                currentCaptureToken = sensorWrapper.StartCapture(
+                    30000, 
+                    CaptureMode.SingleClosestFace
+                );
+                
+                isCapturing = true;
+                liveTimer.Start();
+                
+                btnStartCapture.IsEnabled = false;
+                btnStopCapture.IsEnabled = true;
+                txtStatus.Text = "Estado: Capturando... Por favor mire a la cámara";
+                txtCaptureInfo.Text = "Detectando rostro...";
+                
+                logger.Log(LogLevel.INFO, "Captura iniciada");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al iniciar captura: {ex.Message}", 
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                logger.Log(LogLevel.ERROR, $"Error captura: {ex.Message}");
+            }
+        }
+
+        private void LiveTimer_Tick(object sender, EventArgs e)
+        {
+            try
+            {
+                if (!isCapturing) return;
+
+                // Obtener datos en vivo
+                var liveData = sensorWrapper.GetCaptureLiveData(true);
+                
+                if (liveData.LiveImage != null && liveData.LiveImage.Length > 0)
+                {
+                    DisplayImage(imgLiveCapture, liveData.LiveImage);
+                }
+
+                if (liveData.FaceDetected)
+                {
+                    txtCaptureInfo.Text = "Rostro detectado - Capturando...";
+                }
+
+                // Intentar obtener resultado de captura
+                TimeSpan duration;
+                var results = sensorWrapper.GetCaptureResult(
+                    currentCaptureToken,
+                    1000, // captureTimeout
+                    false, // autoStopCapture
+                    true, // getCroppedImage
+                    false, // getTemplate
+                    true, // getImage
+                    out duration
+                );
+
+                if (results != null && results.Count > 0)
+                {
+                    ProcessCaptureResult(results[0]);
+                }
+            }
+            catch (NoDataAvailableException)
+            {
+                // Normal, aún no hay datos disponibles
+            }
+            catch (Exception ex)
+            {
+                logger.Log(LogLevel.ERROR, $"Error en captura en vivo: {ex.Message}");
+            }
+        }
+
+        private void ProcessCaptureResult(PersonData personData)
+        {
+            try
+            {
+                if (personData.PersonStatus == PersonStatus.ReadyForVerification)
+                {
+                    liveTimer.Stop();
+                    isCapturing = false;
+
+                    txtStatus.Text = "Estado: Procesando captura...";
+                    txtCaptureInfo.Text = $"Calidad: {personData.AcquisitionQuality:F2}";
+                    txtQuality.Text = $"{personData.AcquisitionQuality:F2}";
+
+                    // Guardar imágenes capturadas
+                    capturedImage = personData.Image.Content.Data;
+                    croppedImage = personData.CroppedImage?.Content.Data;
+
+                    // Mostrar imagen capturada
+                    DisplayImage(imgLiveCapture, capturedImage);
+
+                    // Detener captura
+                    sensorWrapper.StopCapture(currentCaptureToken);
+
+                    // Realizar comparación
+                    PerformVerification();
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Log(LogLevel.ERROR, $"Error procesando resultado: {ex.Message}");
+                MessageBox.Show($"Error al procesar captura: {ex.Message}", 
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void PerformVerification()
+        {
+            try
+            {
+                txtStatus.Text = "Estado: Comparando con imagen de referencia...";
+
+                // Cargar imagen de referencia desde recursos
+                byte[] referenceImage = LoadReferenceImage();
+
+                if (referenceImage == null)
+                {
+                    MessageBox.Show("No se pudo cargar la imagen de referencia", 
+                        "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    ResetCapture();
+                    return;
+                }
+
+                // Usar imagen recortada si está disponible, sino usar la completa
+                byte[] imageToCompare = croppedImage ?? capturedImage;
+
+                // Realizar verificación
+                var verifyResult = sensorWrapper.Verify(
+                    currentCaptureToken,
+                    voterData.Cedula, // PersonID
+                    SourceType.Live,
+                    referenceImage,
+                    "image/jpeg"
+                );
+
+                lastMatchingScore = verifyResult.MatchingScore;
+
+                // Actualizar UI con resultado
+                UpdateVerificationResult(lastMatchingScore);
+
+                txtStatus.Text = "Estado: Verificación completada";
+                btnStartCapture.IsEnabled = true;
+                btnStopCapture.IsEnabled = false;
+                btnShowResults.IsEnabled = true;
+
+                logger.Log(LogLevel.INFO, $"Verificación completada. Score: {lastMatchingScore}");
+            }
+            catch (Exception ex)
+            {
+                logger.Log(LogLevel.ERROR, $"Error en verificación: {ex.Message}");
+                MessageBox.Show($"Error en verificación: {ex.Message}", 
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                ResetCapture();
+            }
+        }
+
+        private void UpdateVerificationResult(float matchingScore)
+        {
+            // Convertir a porcentaje
+            int percentage = (int)(matchingScore * 100);
+            txtMatchingScore.Text = $"{percentage}%";
+
+            // Determinar si hay coincidencia (umbral típico: 70-80%)
+            bool isMatch = percentage >= 75;
+
+            if (isMatch)
+            {
+                txtMatchResult.Text = "✓ VERIFICADO";
+                txtMatchResult.Foreground = System.Windows.Media.Brushes.Green;
+            }
+            else
+            {
+                txtMatchResult.Text = "✗ NO VERIFICADO";
+                txtMatchResult.Foreground = System.Windows.Media.Brushes.Red;
+            }
+
+            txtLastUpdate.Text = $"Última verificación: {DateTime.Now:HH:mm:ss}";
+        }
+
+        private void btnStopCapture_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (isCapturing && !string.IsNullOrEmpty(currentCaptureToken))
+                {
+                    sensorWrapper.StopCapture(currentCaptureToken);
+                }
+                
+                liveTimer?.Stop();
+                isCapturing = false;
+                
+                ResetCapture();
+                
+                logger.Log(LogLevel.INFO, "Captura detenida");
+            }
+            catch (Exception ex)
+            {
+                logger.Log(LogLevel.ERROR, $"Error al detener: {ex.Message}");
+            }
+        }
+
+        private void btnShowResults_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // Crear y mostrar ventana de resultados
+                var resultsWindow = new ResultsWindow(
+                    voterData,
+                    croppedImage ?? capturedImage,
+                    lastMatchingScore
+                );
+                resultsWindow.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al mostrar resultados: {ex.Message}", 
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                logger.Log(LogLevel.ERROR, $"Error mostrar resultados: {ex.Message}");
+            }
+        }
+
+        private void ResetCapture()
+        {
+            btnStartCapture.IsEnabled = true;
+            btnStopCapture.IsEnabled = false;
+            txtStatus.Text = "Estado: Sistema listo";
+            txtCaptureInfo.Text = "";
+        }
+
+        private void DisplayImage(System.Windows.Controls.Image imageControl, byte[] imageData)
+        {
+            try
+            {
+                using (var stream = new MemoryStream(imageData))
+                {
+                    var bitmap = new BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.StreamSource = stream;
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.EndInit();
+                    bitmap.Freeze();
+
+                    imageControl.Dispatcher.Invoke(() => 
+                    {
+                        imageControl.Source = bitmap;
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Log(LogLevel.ERROR, $"Error mostrando imagen: {ex.Message}");
+            }
+        }
+
+        private byte[] LoadReferenceImage()
+        {
+            try
+            {
+                // Intentar cargar desde recursos empaquetados
+                var uri = new Uri("pack://application:,,,/Resources/reference_photo.jpg");
+                var streamInfo = Application.GetResourceStream(uri);
+                
+                if (streamInfo != null)
+                {
+                    using (var stream = streamInfo.Stream)
+                    using (var memoryStream = new MemoryStream())
+                    {
+                        stream.CopyTo(memoryStream);
+                        return memoryStream.ToArray();
+                    }
+                }
+
+                // Si no está en recursos, intentar cargar desde archivo
+                string appPath = AppDomain.CurrentDomain.BaseDirectory;
+                string imagePath = Path.Combine(appPath, "Resources", "reference_photo.jpg");
+                
+                if (File.Exists(imagePath))
+                {
+                    return File.ReadAllBytes(imagePath);
+                }
+
+                logger.Log(LogLevel.WARNING, "No se encontró imagen de referencia");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                logger.Log(LogLevel.ERROR, $"Error cargando referencia: {ex.Message}");
+                return null;
+            }
+        }
+
+        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            try
+            {
+                liveTimer?.Stop();
+                
+                if (isCapturing && !string.IsNullOrEmpty(currentCaptureToken))
+                {
+                    sensorWrapper?.StopCapture(currentCaptureToken);
+                }
+
+                sensorWrapper?.Uninitialize();
+                
+                logger.Log(LogLevel.INFO, "Aplicación cerrada");
+            }
+            catch (Exception ex)
+            {
+                logger.Log(LogLevel.ERROR, $"Error al cerrar: {ex.Message}");
+            }
+        }
+    }
+
+    // Clase para datos del votante
+    public class VoterData
+    {
+        public string Nombre { get; set; }
+        public string Cedula { get; set; }
+        public string Departamento { get; set; }
+        public string Municipio { get; set; }
+        public string Zona { get; set; }
+        public string MesaVotacion { get; set; }
+    }
+
+    // Logger simple
+    public class SimpleLogger : ILogger
+    {
+        public void Log(LogLevel level, string message, string methodName = "::")
+        {
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] [{level}] {methodName}: {message}");
+        }
+    }
+}
+
+----resultados
+
+<Window x:Class="MFaceVotingApp.ResultsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Datos del Votante - Verificación Biométrica" 
+        Height="700" Width="900"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Background="#F5F5F5">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#1976D2" Padding="20">
+            <StackPanel>
+                <TextBlock Text="REPÚBLICA DE COLOMBIA" 
+                          FontSize="14" FontWeight="Bold" 
+                          Foreground="White" HorizontalAlignment="Center"/>
+                <TextBlock Text="REGISTRADURÍA NACIONAL DEL ESTADO CIVIL" 
+                          FontSize="18" FontWeight="Bold" 
+                          Foreground="White" HorizontalAlignment="Center"
+                          Margin="0,5,0,0"/>
+                <TextBlock Text="CÉDULA DE CIUDADANÍA - VERIFICACIÓN BIOMÉTRICA" 
+                          FontSize="12" Foreground="White" 
+                          HorizontalAlignment="Center" Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Main Content -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <Grid Margin="30">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="300"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Photo Section -->
+                <Border Grid.Column="0" Background="White" 
+                       BorderBrush="#CCCCCC" BorderThickness="2" 
+                       CornerRadius="5" Padding="15" 
+                       VerticalAlignment="Top">
+                    <StackPanel>
+                        <TextBlock Text="FOTOGRAFÍA" FontSize="14" 
+                                  FontWeight="Bold" HorizontalAlignment="Center"
+                                  Margin="0,0,0,10"/>
+                        
+                        <Border BorderBrush="#999999" BorderThickness="1" 
+                               Height="320" Width="250" Background="#F9F9F9">
+                            <Image x:Name="imgVoterPhoto" Stretch="Uniform"/>
+                        </Border>
+
+                        <Border Background="#E3F2FD" CornerRadius="3" 
+                               Padding="10" Margin="0,15,0,0">
+                            <StackPanel>
+                                <TextBlock Text="RESULTADO VERIFICACIÓN" 
+                                          FontSize="12" FontWeight="Bold"
+                                          HorizontalAlignment="Center"/>
+                                <TextBlock x:Name="txtVerificationStatus" 
+                                          Text="VERIFICADO" 
+                                          FontSize="20" FontWeight="Bold"
+                                          HorizontalAlignment="Center"
+                                          Foreground="Green" Margin="0,5,0,0"/>
+                                <TextBlock x:Name="txtMatchScore" 
+                                          Text="Coincidencia: 92%" 
+                                          FontSize="14"
+                                          HorizontalAlignment="Center"
+                                          Margin="0,5,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <!-- Data Section -->
+                <Border Grid.Column="1" Background="White" 
+                       BorderBrush="#CCCCCC" BorderThickness="2" 
+                       CornerRadius="5" Padding="25" Margin="20,0,0,0"
+                       VerticalAlignment="Top">
+                    <StackPanel>
+                        <TextBlock Text="DATOS PERSONALES" FontSize="18" 
+                                  FontWeight="Bold" Margin="0,0,0,20"
+                                  Foreground="#1976D2"/>
+
+                        <!-- Nombre Completo -->
+                        <StackPanel Margin="0,0,0,15">
+                            <TextBlock Text="NOMBRE COMPLETO:" 
+                                      FontSize="11" FontWeight="Bold"
+                                      Foreground="#666666"/>
+                            <TextBlock x:Name="txtNombre" 
+                                      Text="JUAN CARLOS PÉREZ GONZÁLEZ" 
+                                      FontSize="16" FontWeight="Bold"
+                                      Margin="0,3,0,0"/>
+                        </StackPanel>
+
+                        <Separator Margin="0,0,0,15"/>
+
+                        <!-- Cédula -->
+                        <StackPanel Margin="0,0,0,15">
+                            <TextBlock Text="NÚMERO DE CÉDULA:" 
+                                      FontSize="11" FontWeight="Bold"
+                                      Foreground="#666666"/>
+                            <TextBlock x:Name="txtCedula" 
+                                      Text="1234567890" 
+                                      FontSize="20" FontWeight="Bold"
+                                      Foreground="#1976D2"
+                                      Margin="0,3,0,0"/>
+                        </StackPanel>
+
+                        <Separator Margin="0,0,0,15"/>
+
+                        <TextBlock Text="INFORMACIÓN ELECTORAL" FontSize="16" 
+                                  FontWeight="Bold" Margin="0,10,0,15"
+                                  Foreground="#1976D2"/>
+
+                        <!-- Departamento -->
+                        <StackPanel Margin="0,0,0,12">
+                            <TextBlock Text="DEPARTAMENTO:" 
+                                      FontSize="11" FontWeight="Bold"
+                                      Foreground="#666666"/>
+                            <TextBlock x:Name="txtDepartamento" 
+                                      Text="CUNDINAMARCA" 
+                                      FontSize="14"
+                                      Margin="0,3,0,0"/>
+                        </StackPanel>
+
+                        <!-- Municipio -->
+                        <StackPanel Margin="0,0,0,12">
+                            <TextBlock Text="MUNICIPIO:" 
+                                      FontSize="11" FontWeight="Bold"
+                                      Foreground="#666666"/>
+                            <TextBlock x:Name="txtMunicipio" 
+                                      Text="BOGOTÁ D.C." 
+                                      FontSize="14"
+                                      Margin="0,3,0,0"/>
+                        </StackPanel>
+
+                        <!-- Zona -->
+                        <StackPanel Margin="0,0,0,12">
+                            <TextBlock Text="ZONA ELECTORAL:" 
+                                      FontSize="11" FontWeight="Bold"
+                                      Foreground="#666666"/>
+                            <TextBlock x:Name="txtZona" 
+                                      Text="ZONA 5 - KENNEDY" 
+                                      FontSize="14"
+                                      Margin="0,3,0,0"/>
+                        </StackPanel>
+
+                        <!-- Mesa de Votación -->
+                        <StackPanel Margin="0,0,0,0">
+                            <TextBlock Text="MESA DE VOTACIÓN:" 
+                                      FontSize="11" FontWeight="Bold"
+                                      Foreground="#666666"/>
+                            <TextBlock x:Name="txtMesa" 
+                                      Text="MESA 042" 
+                                      FontSize="18" FontWeight="Bold"
+                                      Foreground="#D32F2F"
+                                      Margin="0,3,0,0"/>
+                        </StackPanel>
+
+                        <!-- Fecha y Hora -->
+                        <Border Background="#FFF3E0" CornerRadius="3" 
+                               Padding="10" Margin="0,20,0,0">
+                            <StackPanel>
+                                <TextBlock Text="FECHA Y HORA DE VERIFICACIÓN:" 
+                                          FontSize="10" FontWeight="Bold"
+                                          Foreground="#666666"/>
+                                <TextBlock x:Name="txtFechaHora" 
+                                          Text="26/11/2025 - 14:35:22" 
+                                          FontSize="12"
+                                          Margin="0,3,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </ScrollViewer>
+
+        <!-- Footer -->
+        <Border Grid.Row="2" Background="White" 
+               BorderBrush="#CCCCCC" BorderThickness="0,1,0,0" 
+               Padding="20">
+            <Grid>
+                <StackPanel Orientation="Horizontal">
+                    <Button x:Name="btnPrint" Content="📄 Imprimir" 
+                           Width="120" Height="35" Margin="0,0,10,0"
+                           Click="btnPrint_Click"/>
+                    <Button x:Name="btnExport" Content="💾 Exportar PDF" 
+                           Width="120" Height="35"
+                           Click="btnExport_Click"/>
+                </StackPanel>
+                
+                <Button x:Name="btnClose" Content="Cerrar" 
+                       Width="120" Height="35"
+                       HorizontalAlignment="Right"
+                       Click="btnClose_Click"
+                       Background="#F44336" Foreground="White"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
+
+---- codigo resultados
+using System;
+using System.IO;
+using System.Windows;
+using System.Windows.Media.Imaging;
+
+namespace MFaceVotingApp
+{
+    public partial class ResultsWindow : Window
+    {
+        private VoterData voterData;
+        private byte[] photoData;
+        private float matchingScore;
+
+        public ResultsWindow(VoterData voter, byte[] photo, float score)
+        {
+            InitializeComponent();
+            
+            voterData = voter;
+            photoData = photo;
+            matchingScore = score;
+
+            LoadData();
+        }
+
+        private void LoadData()
+        {
+            try
+            {
+                // Cargar foto
+                if (photoData != null && photoData.Length > 0)
+                {
+                    DisplayPhoto(photoData);
+                }
+
+                // Cargar datos personales
+                txtNombre.Text = voterData.Nombre.ToUpper();
+                txtCedula.Text = voterData.Cedula;
+                txtDepartamento.Text = voterData.Departamento.ToUpper();
+                txtMunicipio.Text = voterData.Municipio.ToUpper();
+                txtZona.Text = voterData.Zona.ToUpper();
+                txtMesa.Text = voterData.MesaVotacion.ToUpper();
+
+                // Resultado de verificación
+                int percentage = (int)(matchingScore * 100);
+                txtMatchScore.Text = $"Coincidencia: {percentage}%";
+
+                bool isVerified = percentage >= 75;
+                if (isVerified)
+                {
+                    txtVerificationStatus.Text = "✓ VERIFICADO";
+                    txtVerificationStatus.Foreground = System.Windows.Media.Brushes.Green;
+                }
+                else
+                {
+                    txtVerificationStatus.Text = "✗ NO VERIFICADO";
+                    txtVerificationStatus.Foreground = System.Windows.Media.Brushes.Red;
+                }
+
+                // Fecha y hora
+                txtFechaHora.Text = DateTime.Now.ToString("dd/MM/yyyy - HH:mm:ss");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al cargar datos: {ex.Message}", 
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void DisplayPhoto(byte[] imageData)
+        {
+            try
+            {
+                using (var stream = new MemoryStream(imageData))
+                {
+                    var bitmap = new BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.StreamSource = stream;
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.EndInit();
+                    bitmap.Freeze();
+
+                    imgVoterPhoto.Source = bitmap;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al mostrar foto: {ex.Message}", 
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void btnPrint_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                PrintDialog printDialog = new PrintDialog();
+                if (printDialog.ShowDialog() == true)
+                {
+                    printDialog.PrintVisual(this, "Datos del Votante");
+                    MessageBox.Show("Documento enviado a impresora", 
+                        "Imprimir", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al imprimir: {ex.Message}", 
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void btnExport_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Microsoft.Win32.SaveFileDialog dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    FileName = $"Votante_{voterData.Cedula}_{DateTime.Now:yyyyMMdd_HHmmss}",
+                    DefaultExt = ".pdf",
+                    Filter = "PDF files (*.pdf)|*.pdf"
+                };
+
+                if (dialog.ShowDialog() == true)
+                {
+                    // Aquí se implementaría la exportación a PDF
+                    // Por simplicidad, guardamos como imagen PNG
+                    string pngPath = dialog.FileName.Replace(".pdf", ".png");
+                    SaveWindowAsImage(pngPath);
+                    
+                    MessageBox.Show($"Datos exportados a: {pngPath}", 
+                        "Exportar", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error al exportar: {ex.Message}", 
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void SaveWindowAsImage(string filePath)
+        {
+            try
+            {
+                var width = (int)this.ActualWidth;
+                var height = (int)this.ActualHeight;
+
+                RenderTargetBitmap renderBitmap = new RenderTargetBitmap(
+                    width, height, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                
+                renderBitmap.Render(this);
+
+                PngBitmapEncoder encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(renderBitmap));
+
+                using (FileStream file = File.Create(filePath))
+                {
+                    encoder.Save(file);
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error al guardar imagen: {ex.Message}");
+            }
+        }
+
+        private void btnClose_Click(object sender, RoutedEventArgs e)
+        {
+            this.Close();
+        }
+    }
+}
+-----config app
+
+<Application x:Class="MFaceVotingApp.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- Estilos Globales -->
+            <Style TargetType="Button">
+                <Setter Property="Background" Value="#2196F3"/>
+                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Padding" Value="15,8"/>
+                <Setter Property="FontSize" Value="14"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="3"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Opacity" Value="0.8"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter Property="Opacity" Value="0.6"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.5"/>
+                                    <Setter Property="Cursor" Value="Arrow"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Segoe UI"/>
+            </Style>
+
+            <Style TargetType="Border">
+                <Setter Property="CornerRadius" Value="3"/>
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
+
+
+--- archivo project
+
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{YOUR-GUID-HERE}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>MFaceVotingApp</RootNamespace>
+    <AssemblyName>MFaceVotingApp</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <ProjectTypeGuids>{60dc8134-eba5-43b8-bcc9-bb4bc16c2548};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
+    <WarningLevel>4</WarningLevel>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.ServiceModel" />
+    <Reference Include="System.Xml" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xaml">
+      <RequiredTargetFramework>4.0</RequiredTargetFramework>
+    </Reference>
+    <Reference Include="WindowsBase" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+  </ItemGroup>
+  <ItemGroup>
+    <ApplicationDefinition Include="App.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </ApplicationDefinition>
+    <Page Include="MainWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Compile Include="App.xaml.cs">
+      <DependentUpon>App.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="MainWindow.xaml.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Page Include="ResultsWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="ResultsWindow.xaml.cs">
+      <DependentUpon>ResultsWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Properties\AssemblyInfo.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="Properties\Settings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+    </Compile>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Referencias a las librerías MFace -->
+    <ProjectReference Include="..\MFace.Tool.Common\MFace.Tool.Common.csproj">
+      <Project>{BB99D394-9D9B-4355-B607-307BAEB438DC}</Project>
+      <Name>MFace.Tool.Common</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\MFace.Tool.MFaceProxy\MFace.Tool.MFaceProxy.csproj">
+      <Project>{E85F659E-067C-4DFE-BA6D-A88966EC08D3}</Project>
+      <Name>MFace.Tool.MFaceProxy</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Resources\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Resources\reference_photo.jpg" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
+
+--- documentacion
+
+# Sistema de Verificación Biométrica Electoral - MFace v2
+
+Aplicación WPF .NET Framework 4.8 para captura y verificación biométrica facial utilizando las librerías MFace v2.
+
+## 🎯 Características
+
+- ✅ Captura automática de rostro con MFace v2
+- ✅ Comparación biométrica con foto de referencia
+- ✅ Funcionalidad CROP para recortar rostro y cuello
+- ✅ Cálculo de Matching Score
+- ✅ Visualización de datos del votante
+- ✅ Interfaz intuitiva y profesional
+
+## 📋 Requisitos Previos
+
+1. **Visual Studio 2019 o superior**
+2. **.NET Framework 4.8**
+3. **Hardware MFace** conectado y configurado
+4. **Librerías MFace v2** (incluidas en el repositorio)
+
+## 🚀 Configuración del Proyecto
+
+### 1. Estructura del Proyecto
+
+```
+MFaceVotingApp/
+├── MFaceVotingApp/
+│   ├── App.xaml
+│   ├── App.xaml.cs
+│   ├── MainWindow.xaml
+│   ├── MainWindow.xaml.cs
+│   ├── ResultsWindow.xaml
+│   ├── ResultsWindow.xaml.cs
+│   ├── Resources/
+│   │   └── reference_photo.jpg (FOTO DE REFERENCIA)
+│   └── MFaceVotingApp.csproj
+├── MFace.Tool.Common/
+└── MFace.Tool.MFaceProxy/
+```
+
+### 2. Configuración de Referencias
+
+En Visual Studio:
+
+1. **Agregar referencias a los proyectos MFace:**
+   - Click derecho en el proyecto → Add → Project Reference
+   - Seleccionar `MFace.Tool.Common`
+   - Seleccionar `MFace.Tool.MFaceProxy`
+
+2. **Agregar referencias necesarias:**
+   - System.ServiceModel
+   - System.Drawing
+   - WindowsBase
+   - PresentationCore
+   - PresentationFramework
+
+### 3. Configurar App.config
+
+Crear o modificar `App.config` en el proyecto principal:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <startup>
+    <supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.8"/>
+  </startup>
+  
+  <system.serviceModel>
+    <bindings>
+      <basicHttpBinding>
+        <binding name="sensorHttpEndpoint" 
+                 closeTimeout="00:01:00" 
+                 openTimeout="00:01:00" 
+                 receiveTimeout="00:10:00" 
+                 sendTimeout="00:01:00"
+                 maxReceivedMessageSize="2147483647"/>
+      </basicHttpBinding>
+    </bindings>
+    
+    <client>
+      <endpoint address="http://localhost:11099/MFace/Service/Sensor" 
+                binding="basicHttpBinding" 
+                bindingConfiguration="sensorHttpEndpoint" 
+                contract="Morpho.MFace.Sensor.Service.ISensorService" 
+                name="sensorHttpEndpoint"/>
+    </client>
+  </system.serviceModel>
+</configuration>
+```
+
+### 4. Agregar Foto de Referencia
+
+1. Crear carpeta `Resources` en el proyecto
+2. Agregar una foto JPEG de rostro como `reference_photo.jpg`
+3. En propiedades del archivo:
+   - Build Action: **Resource**
+   - Copy to Output Directory: **Copy if newer**
+
+## 🔧 Configuración de MFace
+
+### Verificar Conexión al Servicio MFace
+
+1. Asegurarse que el servicio MFace esté corriendo en `http://localhost:11099`
+2. Verificar que el hardware MFace esté conectado
+3. Probar conectividad antes de ejecutar la aplicación
+
+### Ajustar Endpoint (si es necesario)
+
+Si el servicio MFace está en otra dirección, modificar en `App.config`:
+
+```xml
+<endpoint address="http://TU_IP:PUERTO/MFace/Service/Sensor" ... />
+```
+
+Y en `MainWindow.xaml.cs`, línea de inicialización:
+
+```csharp
+sensorWrapper = new SensorWrapper(logger, 2, "sensorHttpEndpoint");
+```
+
+## 📝 Uso de la Aplicación
+
+### Flujo Principal
+
+1. **Inicio:**
+   - La aplicación se conecta automáticamente al servicio MFace
+   - Verifica el estado en la barra de estado
+
+2. **Captura:**
+   - Click en "Iniciar Captura"
+   - Posicionarse frente a la cámara MFace
+   - El sistema detecta automáticamente el rostro
+   - Captura y recorta (CROP) la imagen
+
+3. **Verificación:**
+   - Compara automáticamente con la foto de referencia
+   - Muestra el Matching Score
+   - Indica si está VERIFICADO o NO VERIFICADO
+
+4. **Resultados:**
+   - Click en "Ver Datos del Votante"
+   - Visualiza la foto capturada (recortada)
+   - Muestra datos del votante (ficticios)
+   - Opciones de imprimir o exportar
+
+### Umbrales de Verificación
+
+- **≥ 75%**: VERIFICADO ✓ (verde)
+- **< 75%**: NO VERIFICADO ✗ (rojo)
+
+Ajustar en `MainWindow.xaml.cs`, método `UpdateVerificationResult()`:
+
+```csharp
+bool isMatch = percentage >= 75; // Cambiar umbral aquí
+```
+
+## 🎨 Personalización
+
+### Datos del Votante
+
+Modificar en `MainWindow.xaml.cs`:
+
+```csharp
+private VoterData voterData = new VoterData
+{
+    Nombre = "Nombre Completo",
+    Cedula = "1234567890",
+    Departamento = "Departamento",
+    Municipio = "Municipio",
+    Zona = "Zona Electoral",
+    MesaVotacion = "Mesa XXX"
+};
+```
+
+### Colores y Estilos
+
+En `App.xaml` se pueden modificar los estilos globales:
+
+```xml
+<Setter Property="Background" Value="#2196F3"/>
+```
+
+## 🐛 Solución de Problemas
+
+### Error: "Cannot connect to MFace.Service"
+
+- ✅ Verificar que el servicio MFace esté corriendo
+- ✅ Verificar la dirección en App.config
+- ✅ Verificar firewall/antivirus
+
+### Error: "Failed to open Sensor Service Channel Factory"
+
+- ✅ Verificar configuración de bindings en App.config
+- ✅ Verificar que el endpoint esté correctamente configurado
+
+### No se detecta el rostro
+
+- ✅ Verificar iluminación adecuada
+- ✅ Posicionarse correctamente frente a la cámara
+- ✅ Verificar que la cámara MFace esté funcionando
+
+### Imagen de referencia no carga
+
+- ✅ Verificar que `reference_photo.jpg` exista en `Resources/`
+- ✅ Verificar que Build Action sea "Resource"
+- ✅ Verificar formato de imagen (JPEG)
+
+## 📊 Características Técnicas
+
+### Funcionalidades MFace v2 Utilizadas
+
+1. **Initialize()**: Inicializa el sistema MFace
+2. **StartCapture()**: Inicia captura con modo SingleClosestFace
+3. **GetCaptureLiveData()**: Obtiene feed en vivo
+4. **GetCaptureResult()**: Obtiene resultado con imagen CROPPED
+5. **Verify()**: Realiza comparación biométrica 1:1
+6. **StopCapture()**: Detiene la captura
+7. **Uninitialize()**: Libera recursos
+
+### Proceso de CROP
+
+El CROP se realiza automáticamente por MFace:
+
+```csharp
+var results = sensorWrapper.GetCaptureResult(
+    currentCaptureToken,
+    1000,
+    false,
+    true, // getCroppedImage = TRUE
+    false,
+    true,
+    out duration
+);
+
+croppedImage = personData.CroppedImage?.Content.Data;
+```
+
+## 📄 Licencia
+
+Este proyecto utiliza las librerías MFace de IDEMIA.
+
+## 👥 Soporte
+
+Para soporte adicional:
+- Revisar documentación de MFace v2
+- Contactar al equipo de soporte de IDEMIA
+
+---
+
+**Nota**: Esta aplicación utiliza datos ficticios con fines demostrativos. Para un sistema de producción, integrar con bases de datos reales y cumplir normativas de protección de datos.
